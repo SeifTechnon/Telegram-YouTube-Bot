@@ -7,7 +7,7 @@ from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from yt_dlp import YoutubeDL
 
-# ✅ إعداد السجل (Logging)
+# ✅ إعداد السجل (Logging).
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 # ✅ إعداد المتغيرات البيئية
