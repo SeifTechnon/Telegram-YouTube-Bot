@@ -1,31 +1,34 @@
 import os
 import logging
-from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
-from yt_dlp import YoutubeDL
-import ffmpeg
 import requests
+import ffmpeg
 from flask import Flask, request
+from telegram import Update, Bot
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from yt_dlp import YoutubeDL
 
-# إعداد المتغيرات البيئية
+# ✅ إعداد المتغيرات البيئية
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-RAILWAY_URL = os.getenv("RAILWAY_URL")  # رابط Railway الخاص بك
+RAILWAY_URL = os.getenv("RAILWAY_URL", "https://your-default-url.com")  # ضع رابطًا افتراضيًا مناسبًا
 
-# تأكد من أن RAILWAY_URL محدد
+# 🔍 التأكد من أن المتغيرات البيئية الضرورية موجودة
+if not TELEGRAM_BOT_TOKEN:
+    raise ValueError("❌ لم يتم تحديد TELEGRAM_BOT_TOKEN في المتغيرات البيئية!")
+
 if not RAILWAY_URL:
     raise ValueError("❌ لم يتم تحديد RAILWAY_URL في المتغيرات البيئية!")
 
-# تشغيل Flask لإنشاء Webhook
+# ✅ تشغيل Flask لإنشاء Webhook
 app = Flask(__name__)
 
-# تفعيل سجل الأحداث
+# ✅ تفعيل سجل الأحداث
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# قائمة لتخزين روابط الفيديوهات للمستخدمين
+# ✅ قائمة لتخزين روابط الفيديوهات للمستخدمين
 user_data = {}
 
-async def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """استقبال أوامر بدء البوت"""
     await update.message.reply_text("🔹 أرسل رابط فيديو من يوتيوب وسأقوم بتنزيله لك مع الترجمة العربية!")
 
@@ -40,7 +43,7 @@ def get_video_formats(url):
         ]
     return formats
 
-async def handle_message(update: Update, context: CallbackContext):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """التعامل مع رسالة المستخدم عند إرسال رابط يوتيوب"""
     url = update.message.text
     formats = get_video_formats(url)
@@ -65,9 +68,12 @@ def download_video(url, format_id):
 
 def burn_subtitles(video_path, subtitle_path, output_path):
     """حرق الترجمة داخل الفيديو"""
-    ffmpeg.input(video_path).output(output_path, vf=f"subtitles={subtitle_path}").run()
+    try:
+        ffmpeg.input(video_path).output(output_path, vf=f"subtitles={subtitle_path}").run()
+    except Exception as e:
+        logging.error(f"❌ فشل في حرق الترجمة: {e}")
 
-async def handle_format_selection(update: Update, context: CallbackContext):
+async def handle_format_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """التعامل مع اختيار المستخدم للجودة"""
     format_id = update.message.text
     chat_id = update.message.chat_id
@@ -88,16 +94,20 @@ async def handle_format_selection(update: Update, context: CallbackContext):
 async def send_video(video_path, chat_id):
     """إرسال الفيديو النهائي إلى تيليجرام"""
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    await bot.send_video(chat_id=chat_id, video=open(video_path, 'rb'))
+    try:
+        with open(video_path, 'rb') as video:
+            await bot.send_video(chat_id=chat_id, video=video)
+    except Exception as e:
+        logging.error(f"❌ فشل إرسال الفيديو: {e}")
 
-# إنشاء تطبيق Telegram
+# ✅ إنشاء تطبيق Telegram
 telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 telegram_app.add_handler(MessageHandler(filters.Regex(r'^\d+$'), handle_format_selection))
 
-# إعداد Webhook
+# ✅ إعداد Webhook
 @app.route(f"/webhook", methods=["POST"])
 def webhook():
     """استقبال تحديثات Telegram وإرسالها إلى البوت"""
@@ -109,7 +119,11 @@ def set_webhook():
     """تسجيل Webhook مع Telegram"""
     webhook_url = f"{RAILWAY_URL}/webhook"
     response = requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={webhook_url}")
-    print(response.json())
+    
+    if response.status_code == 200:
+        print("✅ تم تسجيل الـ Webhook بنجاح!")
+    else:
+        print(f"❌ فشل تسجيل Webhook: {response.json()}")
 
 if __name__ == "__main__":
     set_webhook()
