@@ -7,23 +7,27 @@ from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from yt_dlp import YoutubeDL
 
+# ✅ إعداد السجل (Logging)
+logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
+
 # ✅ إعداد المتغيرات البيئية
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-RAILWAY_URL = os.getenv("RAILWAY_URL", "https://your-default-url.com")  # ضع رابطًا افتراضيًا مناسبًا
+RAILWAY_URL = os.getenv("RAILWAY_URL", "").strip()  # إزالة المسافات الزائدة
 
-# 🔍 التأكد من أن المتغيرات البيئية الضرورية موجودة
+# ✅ طباعة القيم للتأكد من أنها مُعدة بشكل صحيح
+logging.info(f"🔹 TELEGRAM_BOT_TOKEN = {TELEGRAM_BOT_TOKEN[:5]}... (تم إخفاء باقي التوكن لأمان أكثر)")
+logging.info(f"🔹 TELEGRAM_CHAT_ID = {TELEGRAM_CHAT_ID}")
+logging.info(f"🔹 RAILWAY_URL = {RAILWAY_URL}")
+
+# 🔍 التأكد من أن جميع المتغيرات البيئية مضبوطة
 if not TELEGRAM_BOT_TOKEN:
     raise ValueError("❌ لم يتم تحديد TELEGRAM_BOT_TOKEN في المتغيرات البيئية!")
-
 if not RAILWAY_URL:
     raise ValueError("❌ لم يتم تحديد RAILWAY_URL في المتغيرات البيئية!")
 
 # ✅ تشغيل Flask لإنشاء Webhook
 app = Flask(__name__)
-
-# ✅ تفعيل سجل الأحداث
-logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 # ✅ قائمة لتخزين روابط الفيديوهات للمستخدمين
 user_data = {}
@@ -108,7 +112,7 @@ telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_
 telegram_app.add_handler(MessageHandler(filters.Regex(r'^\d+$'), handle_format_selection))
 
 # ✅ إعداد Webhook
-@app.route(f"/webhook", methods=["POST"])
+@app.route("/webhook", methods=["POST"])
 def webhook():
     """استقبال تحديثات Telegram وإرسالها إلى البوت"""
     update = Update.de_json(request.get_json(), telegram_app.bot)
@@ -118,12 +122,18 @@ def webhook():
 def set_webhook():
     """تسجيل Webhook مع Telegram"""
     webhook_url = f"{RAILWAY_URL}/webhook"
-    response = requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={webhook_url}")
+    logging.info(f"🔗 محاولة تسجيل Webhook على: {webhook_url}")
     
-    if response.status_code == 200:
-        print("✅ تم تسجيل الـ Webhook بنجاح!")
-    else:
-        print(f"❌ فشل تسجيل Webhook: {response.json()}")
+    try:
+        response = requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={webhook_url}")
+        response_json = response.json()
+
+        if response.status_code == 200 and response_json.get("ok"):
+            logging.info("✅ تم تسجيل الـ Webhook بنجاح!")
+        else:
+            logging.error(f"❌ فشل تسجيل Webhook: {response_json}")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"❌ خطأ في الاتصال عند تسجيل Webhook: {e}")
 
 if __name__ == "__main__":
     set_webhook()
