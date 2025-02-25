@@ -7,12 +7,12 @@ WORKDIR /app
 # نسخ جميع الملفات إلى الحاوية
 COPY . /app/
 
-# إضافة صلاحيات التنفيذ
+# تثبيت pip والمكتبات المطلوبة بدون ذاكرة مؤقتة
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir -r requirements.txt
+
+# إعطاء صلاحيات تنفيذ لـ start.sh
 RUN chmod +x /app/start.sh
 
-# تثبيت pip والمكتبات المطلوبة
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
-
 # تشغيل البوت تلقائيًا عند بدء التشغيل
-CMD ["python3", "bot.py"]
+CMD ["bash", "/app/start.sh"]
