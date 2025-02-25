@@ -1,0 +1,33 @@
+name: Telegram YouTube Bot
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🔽 تحميل المستودع
+        uses: actions/checkout@v4
+
+      - name: 🔧 تثبيت Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: 📦 تثبيت المتطلبات
+        run: |
+          pip install yt-dlp ffmpeg-python python-telegram-bot
+
+      - name: 🛠️ تثبيت FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: 🚀 تشغيل بوت تيليجرام
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python bot.py
