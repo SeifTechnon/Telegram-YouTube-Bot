@@ -7,6 +7,9 @@ WORKDIR /app
 # نسخ جميع الملفات إلى الحاوية
 COPY . /app/
 
+# إضافة صلاحيات التنفيذ
+RUN chmod +x /app/start.sh
+
 # تثبيت pip والمكتبات المطلوبة
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
