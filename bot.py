@@ -4,10 +4,20 @@ from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from yt_dlp import YoutubeDL
 import ffmpeg
+import requests
+from flask import Flask, request
 
-# إعداد المتغيرات من GitHub Secrets
+# إعداد المتغيرات البيئية
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+RAILWAY_URL = os.getenv("RAILWAY_URL")  # رابط Railway الخاص بك
+
+# تأكد من أن RAILWAY_URL محدد
+if not RAILWAY_URL:
+    raise ValueError("❌ لم يتم تحديد RAILWAY_URL في المتغيرات البيئية!")
+
+# تشغيل Flask لإنشاء Webhook
+app = Flask(__name__)
 
 # تفعيل سجل الأحداث
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -16,6 +26,7 @@ logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=lo
 user_data = {}
 
 async def start(update: Update, context: CallbackContext):
+    """استقبال أوامر بدء البوت"""
     await update.message.reply_text("🔹 أرسل رابط فيديو من يوتيوب وسأقوم بتنزيله لك مع الترجمة العربية!")
 
 def get_video_formats(url):
@@ -79,11 +90,27 @@ async def send_video(video_path, chat_id):
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     await bot.send_video(chat_id=chat_id, video=open(video_path, 'rb'))
 
-# تشغيل البوت باستخدام النظام الجديد
-app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+# إنشاء تطبيق Telegram
+telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-app.add_handler(MessageHandler(filters.Regex(r'^\d+$'), handle_format_selection))
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+telegram_app.add_handler(MessageHandler(filters.Regex(r'^\d+$'), handle_format_selection))
 
-app.run_polling()
+# إعداد Webhook
+@app.route(f"/webhook", methods=["POST"])
+def webhook():
+    """استقبال تحديثات Telegram وإرسالها إلى البوت"""
+    update = Update.de_json(request.get_json(), telegram_app.bot)
+    telegram_app.update_queue.put(update)
+    return "✅ Webhook received!", 200
+
+def set_webhook():
+    """تسجيل Webhook مع Telegram"""
+    webhook_url = f"{RAILWAY_URL}/webhook"
+    response = requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={webhook_url}")
+    print(response.json())
+
+if __name__ == "__main__":
+    set_webhook()
+    app.run(host="0.0.0.0", port=8080)
