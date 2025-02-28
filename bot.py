@@ -348,29 +348,5 @@ if __name__ == "__main__":
     else:
         logger.warning("⚠️ بدء تشغيل الخادم مع فشل تسجيل Webhook!")
 
-    try:
-        from gunicorn.app.base import BaseApplication
-
-        class FlaskApplication(BaseApplication):
-            def __init__(self, app, options=None):
-                self.options = options or {}
-                self.application = app
-                super().__init__()
-
-            def load_config(self):
-                for key, value in self.options.items():
-                    self.cfg.set(key, value)
-
-            def load(self):
-                return self.application
-
-        options = {
-            'bind': '0.0.0.0:8080',
-            'workers': 4,
-        }
-
-        FlaskApplication(app, options).run()
-
-    except ImportError:
-        logger.error("❌ Gunicorn غير مثبت. يرجى تثبيته باستخدام `pip install gunicorn`.")
-        app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    PORT = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=PORT)
