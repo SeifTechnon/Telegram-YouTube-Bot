@@ -265,6 +265,11 @@ def health_check():
         "webhook_url": f"{RAILWAY_URL}/webhook"
     }), 200
 
+@app.route("/health", methods=["GET"])
+def health_check_endpoint():
+    """نقطة نهاية للتحقق من صحة التطبيق"""
+    return jsonify({"status": "ok", "message": "Bot is healthy"}), 200
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     """استقبال تحديثات Telegram وإرسالها إلى البوت"""
