@@ -2,7 +2,7 @@ import os
 import logging
 import requests
 import ffmpeg
-from flask import Flask, request, jsonify
+from quart import Quart, request, jsonify
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from yt_dlp import YoutubeDL
@@ -36,8 +36,8 @@ if not TELEGRAM_BOT_TOKEN:
 if not RAILWAY_URL:
     raise ValueError("❌ لم يتم تحديد RAILWAY_URL في المتغيرات البيئية!")
 
-# تشغيل Flask لإنشاء Webhook
-app = Flask(__name__)
+# تشغيل Quart لإنشاء Webhook
+app = Quart(__name__)
 
 # قائمة لتخزين روابط الفيديوهات للمستخدمين
 user_data = {}
@@ -256,7 +256,7 @@ telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_
 telegram_app.add_error_handler(error_handler)
 
 @app.route("/", methods=["GET"])
-def health_check():
+async def health_check():
     """نقطة نهاية للتحقق من صحة البوت"""
     return jsonify({
         "status": "ok",
@@ -266,16 +266,16 @@ def health_check():
     }), 200
 
 @app.route("/health", methods=["GET"])
-def health_check_endpoint():
+async def health_check_endpoint():
     """نقطة نهاية للتحقق من صحة التطبيق"""
     return jsonify({"status": "ok", "message": "Bot is healthy"}), 200
 
 @app.route("/webhook", methods=["POST"])
-def webhook():
+async def webhook():
     """استقبال تحديثات Telegram وإرسالها إلى البوت"""
     try:
         logger.info("📩 تم استلام طلب webhook")
-        json_data = request.get_json()
+        json_data = await request.get_json()
 
         if json_data and 'update_id' in json_data:
             update_id = json_data.get('update_id')
@@ -288,7 +288,7 @@ def webhook():
             logger.info(f"📦 تحديث جديد: ID={update_id}, من: {user_id} (@{username}), النص: {text[:20]}...")
 
         update = Update.de_json(json_data, telegram_app.bot)
-        telegram_app.update_queue.put(update)
+        await telegram_app.update_queue.put(update)  # <-- تم إضافة await هنا
 
         return "✅ Webhook received!", 200
     except Exception as e:
