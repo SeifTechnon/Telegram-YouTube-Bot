@@ -1,5 +1,10 @@
 # استخدم صورة Python الرسمية
-FROM python:3.11
+FROM python:3.11-slim
+
+# تثبيت FFmpeg (مطلوب لـ yt-dlp وffmpeg-python)
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 # ضبط مجلد العمل داخل الحاوية
 WORKDIR /app
@@ -14,6 +19,9 @@ COPY . /app/
 
 # إعطاء صلاحيات تنفيذ لـ start.sh
 RUN chmod +x /app/start.sh
+
+# تعريف متغيرات البيئة
+ENV PORT=8080
 
 # تشغيل البوت تلقائيًا عند بدء التشغيل
 CMD ["bash", "/app/start.sh"]
