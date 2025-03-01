@@ -291,6 +291,7 @@ async def webhook():
         if 'from' in json_data.get('message', {}):
             json_data['message']['from']['is_bot'] = False  # <-- إضافة حقل `is_bot`
 
+        # تحويل البيانات إلى كائن Update
         update = Update.de_json(json_data, telegram_app.bot)
         await telegram_app.update_queue.put(update)  # <-- تم إضافة await هنا
 
