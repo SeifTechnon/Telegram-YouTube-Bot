@@ -11,7 +11,7 @@ import whisper
 # إعداد السجل (Logging) بمزيد من التفاصيل
 logging.basicConfig(
     filename="logs.txt",
-    level=logging.ERROR,
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
