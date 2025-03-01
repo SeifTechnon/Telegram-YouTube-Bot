@@ -1,5 +1,6 @@
 import os
 import logging
+import requests  # <-- تمت إضافة المكتبة هنا
 from quart import Quart, request, jsonify
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
