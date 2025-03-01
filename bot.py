@@ -287,6 +287,10 @@ async def webhook():
 
             logger.info(f"📦 تحديث جديد: ID={update_id}, من: {user_id} (@{username}), النص: {text[:20]}...")
 
+        # إصلاح مشكلة `is_bot`
+        if 'from' in json_data.get('message', {}):
+            json_data['message']['from']['is_bot'] = False  # <-- إضافة حقل `is_bot`
+
         update = Update.de_json(json_data, telegram_app.bot)
         await telegram_app.update_queue.put(update)  # <-- تم إضافة await هنا
 
