@@ -8,10 +8,15 @@ from pathlib import Path
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
+from quart import Quart, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from yt_dlp import YoutubeDL
 import ffmpeg
+
+# إنشاء تطبيق Quart وتطبيق Telegram
+app = Quart(__name__)
+PORT = int(os.environ.get('PORT', 8080))
 
 # إعداد السجل
 logging.basicConfig(
@@ -27,6 +32,11 @@ if not TELEGRAM_BOT_TOKEN:
 
 # نمط للتعرف على روابط يوتيوب
 YOUTUBE_REGEX = r'(https?://)?(www\.)?(youtube\.com|youtu\.be)/(watch\?v=|shorts/)?([a-zA-Z0-9_-]{11})'
+
+# إضافة مسار صحة التطبيق (healthcheck)
+@app.route('/health')
+async def health_check():
+    return jsonify({"status": "healthy", "message": "Bot is running"}), 200
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -330,20 +340,43 @@ async def process_videos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
 
 
-def main() -> None:
-    """تشغيل البوت"""
-    # إنشاء تطبيق البوت
+# إنشاء وتشغيل تطبيق Telegram
+async def init_telegram_bot():
+    """تهيئة وتشغيل بوت التلجرام"""
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
+    
     # إضافة معالجات الأوامر
     application.add_handler(CommandHandler("start", start))
     
     # إضافة معالج الرسائل النصية (للروابط)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_videos))
-
+    
     # بدء البوت
-    application.run_polling()
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    
+    return application
+
+
+@app.before_serving
+async def startup():
+    """تنفيذ هذه الدالة عند بدء تشغيل التطبيق"""
+    logger.info("بدء تشغيل البوت...")
+    app.telegram_bot = await init_telegram_bot()
+    logger.info("تم بدء تشغيل البوت بنجاح!")
+
+
+@app.after_serving
+async def shutdown():
+    """تنفيذ هذه الدالة عند إيقاف التطبيق"""
+    logger.info("إيقاف تشغيل البوت...")
+    if hasattr(app, 'telegram_bot'):
+        await app.telegram_bot.stop()
+        await app.telegram_bot.shutdown()
+    logger.info("تم إيقاف تشغيل البوت بنجاح!")
 
 
 if __name__ == "__main__":
-    main()
+    # استخدام متغير PORT من البيئة أو استخدام 8080 كقيمة افتراضية
+    app.run(host="0.0.0.0", port=PORT)
