@@ -340,9 +340,9 @@ async def process_videos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
 
 
-# إنشاء وتشغيل تطبيق Telegram
-async def init_telegram_bot():
-    """تهيئة وتشغيل بوت التلجرام"""
+# تكوين تطبيق تليجرام
+def create_telegram_app():
+    """إنشاء وتكوين تطبيق تليجرام بدون تشغيل"""
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
     # إضافة معالجات الأوامر
@@ -351,32 +351,48 @@ async def init_telegram_bot():
     # إضافة معالج الرسائل النصية (للروابط)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_videos))
     
-    # بدء البوت
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling()
-    
     return application
+
+
+# المتغير العام لتخزين تطبيق تليجرام
+telegram_app = None
 
 
 @app.before_serving
 async def startup():
     """تنفيذ هذه الدالة عند بدء تشغيل التطبيق"""
+    global telegram_app
     logger.info("بدء تشغيل البوت...")
-    app.telegram_bot = await init_telegram_bot()
+    
+    # إنشاء تطبيق تليجرام
+    telegram_app = create_telegram_app()
+    
+    # تهيئة التطبيق فقط ولا تشغيل الاستطلاع
+    await telegram_app.initialize()
+    
+    # بدء الاستطلاع في وضع غير متزامن
+    # استخدام سياق غير متزامن لتشغيل الاستطلاع في الخلفية
+    asyncio.create_task(telegram_app.updater.start_polling(drop_pending_updates=True))
+    
     logger.info("تم بدء تشغيل البوت بنجاح!")
 
 
 @app.after_serving
 async def shutdown():
     """تنفيذ هذه الدالة عند إيقاف التطبيق"""
+    global telegram_app
     logger.info("إيقاف تشغيل البوت...")
-    if hasattr(app, 'telegram_bot'):
-        await app.telegram_bot.stop()
-        await app.telegram_bot.shutdown()
+    
+    # إيقاف البوت إذا كان قيد التشغيل
+    if telegram_app is not None:
+        await telegram_app.updater.stop()
+        await telegram_app.stop()
+        await telegram_app.shutdown()
+    
     logger.info("تم إيقاف تشغيل البوت بنجاح!")
 
 
 if __name__ == "__main__":
-    # استخدام Hypercorn سيتم عبر ملف start.sh
+    # تشغيل التطبيق كخادم ويب
+    # سيتم استخدام Hypercorn عبر ملف start.sh
     pass
