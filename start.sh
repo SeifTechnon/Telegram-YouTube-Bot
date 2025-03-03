@@ -7,4 +7,4 @@ fi
 
 echo "🚀 جاري بدء تشغيل البوت..."
 # استخدام Hypercorn لتشغيل تطبيق Quart
-hypercorn bot:app --bind 0.0.0.0:$PORT
+hypercorn bot:app --bind 0.0.0.0:$PORT --workers 2 --worker-class uvloop
