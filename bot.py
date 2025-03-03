@@ -378,5 +378,5 @@ async def shutdown():
 
 
 if __name__ == "__main__":
-    # استخدام متغير PORT من البيئة أو استخدام 8080 كقيمة افتراضية
-    app.run(host="0.0.0.0", port=PORT)
+    # استخدام Hypercorn سيتم عبر ملف start.sh
+    pass

@@ -22,5 +22,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # نسخ ملفات المشروع
 COPY . .
 
-# تشغيل البوت
-CMD ["python", "bot.py"]
+# جعل ملف start.sh قابل للتنفيذ
+RUN chmod +x start.sh
+
+# تشغيل البوت باستخدام start.sh
+CMD ["./start.sh"]
