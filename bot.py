@@ -60,6 +60,7 @@ telegram_initialized = False
 # إضافة مسار صحة التطبيق (healthcheck)
 @app.route('/health')
 async def health_check():
+    logger.info("تم استقبال طلب للتحقق من صحة التطبيق")
     return jsonify({
         "status": "healthy",
         "message": "Bot is running",
@@ -71,10 +72,12 @@ async def health_check():
 @app.route(f'/webhook/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
 async def webhook():
     if not telegram_app:
+        logger.error("Telegram application not initialized")
         return jsonify({"status": "error", "message": "Telegram application not initialized"}), 500
 
     # الحصول على بيانات التحديث
     update_data = await request.get_json()
+    logger.info("تم استقبال تحديث من تليجرام")
 
     # تحويل البيانات إلى كائن Update
     update = Update.de_json(update_data, telegram_app.bot)
@@ -561,21 +564,33 @@ async def startup():
     global telegram_app, telegram_initialized
     logger.info("بدء تشغيل البوت...")
 
-    # إنشاء تطبيق تليجرام
-    telegram_app = create_telegram_app()
+    try:
+        # التحقق من وجود التوكن
+        if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "DEFAULT_TOKEN":
+            raise ValueError("❌ لم يتم تعيين رمز البوت!")
 
-    # تهيئة التطبيق فقط ولا تشغيل الاستطلاع
-    await telegram_app.initialize()
+        telegram_app = create_telegram_app()
+        logger.info("✅ تم إنشاء تطبيق التليجرام")
 
-    if USE_WEBHOOK:
-        # إذا كان الوضع webhook، قم بتعيينه
-        await telegram_app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook/{TELEGRAM_BOT_TOKEN}")
-    else:
-        # إذا كان الوضع polling، ابدأ الاستطلاع
-        await telegram_app.updater.start_polling(drop_pending_updates=True)
+        await telegram_app.initialize()
+        logger.info("✅ تم تهيئة التطبيق")
 
-    telegram_initialized = True
-    logger.info("تم بدء تشغيل البوت بنجاح!")
+        if USE_WEBHOOK:
+            webhook_url = f"{WEBHOOK_URL}/webhook/{TELEGRAM_BOT_TOKEN}"
+            logger.info(f"🔄 جاري تعيين الويب هوك: {webhook_url}")
+            await telegram_app.bot.set_webhook(webhook_url)
+            logger.info("✅ تم تعيين الويب هوك")
+        else:
+            logger.info("🔄 بدء وضع الاستطلاع...")
+            await telegram_app.updater.start_polling()
+            logger.info("✅ بدأ الاستطلاع")
+
+        telegram_initialized = True
+        logger.info("🚀 بدء التشغيل بنجاح!")
+    except Exception as e:
+        logger.error(f"❌ فشل التهيئة: {str(e)}")
+        sentry_sdk.capture_exception(e)
+        raise
 
 @app.after_serving
 async def shutdown():
