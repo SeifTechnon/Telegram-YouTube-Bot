@@ -581,6 +581,8 @@ async def startup():
             await telegram_app.bot.set_webhook(webhook_url)
             logger.info("✅ تم تعيين الويب هوك")
         else:
+            # إضافة تأخير قبل بدء Polling
+            await asyncio.sleep(5)
             logger.info("🔄 بدء وضع الاستطلاع...")
             await telegram_app.updater.start_polling()
             logger.info("✅ بدأ الاستطلاع")
