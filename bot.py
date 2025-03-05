@@ -133,7 +133,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     keyboard = [
         [InlineKeyboardButton("🔍 طريقة الاستخدام", callback_data="help")],
-        [InlineKeyboardButton("📱 تواصل مع المطور", url="https://t.me/yourusername")]
+        [InlineKeyboardButton("📱 تواصل مع المطور", url="https://t.me/SeifTechnon")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
