@@ -8,3 +8,6 @@ quart
 hypercorn
 uvloop
 sentry-sdk
+torch
+torchaudio
+numpy
