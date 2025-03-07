@@ -187,7 +187,7 @@ async def download_video(video_url: str, output_dir: str, message_ref) -> str:
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
-            'keep_video': True  # ← لا تمسح الفيديو الأصلي
+            'keepvideo': True  # ← إصلاح إملائي
         }]
     }
     
@@ -252,7 +252,7 @@ async def merge_videos(video_files: list, output_dir: str, message_ref) -> str:
     list_file = os.path.join(output_dir, "filelist.txt")
     with open(list_file, "w", encoding="utf-8") as f:
         for video in video_files:
-            f.write(f"file '{os.path.abspath(video)}'\n")  # ← استخدام المسار المطلق
+            f.write(f"file '{os.path.abspath(video)}'\n")  # ← المسار المطلق
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = os.path.join(output_dir, f"merged_{timestamp}.mp4")
