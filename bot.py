@@ -41,7 +41,7 @@ if not TELEGRAM_BOT_TOKEN:
     logger.error("⚠️ لم يتم تعيين TELEGRAM_BOT_TOKEN في المتغيرات البيئية!")
     raise ValueError("TELEGRAM_BOT_TOKEN is not set!")
 
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # إضافة معرف الدردشة الإدارية
 
 USE_WEBHOOK = True
 
@@ -182,19 +182,24 @@ async def download_video(video_url: str, output_dir: str, message_ref) -> str:
     
     ydl_opts = {
         'format': 'bestvideo[height<=720]+bestaudio/best',
-        'outtmpl': os.path.join(output_dir, f"{video_id}.mp4"),
+        'outtmpl': os.path.join(output_dir, f"{video_id}.%(ext)s"),
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
+            'keep_video': True  # ← لا تمسح الفيديو الأصلي
         }]
     }
     
     with YoutubeDL(ydl_opts) as ydl:
         ydl.download([video_url])
-    return os.path.join(output_dir, f"{video_id}.mp4")
+    
+    # ابحث عن الفيديو الأصلي (مثل .mp4 أو .webm)
+    video_files = [f for f in os.listdir(output_dir) if f.startswith(f"{video_id}") and f.endswith(('.mp4', '.webm'))]
+    return os.path.join(output_dir, video_files[0]) if video_files else None
 
 async def generate_subtitles(video_file: str, output_dir: str, message_ref) -> str:
+    await message_ref.edit_text("🔊 جاري استخراج النص من الفيديو...\n\n⏳ يرجى الانتظار...")
     base_name = os.path.basename(video_file).split('.')[0]
     srt_file = os.path.join(output_dir, f"{base_name}.srt")
     
@@ -237,15 +242,20 @@ async def burn_subtitles(video_file: str, subtitle_file: str, output_dir: str, m
         stderr=asyncio.subprocess.PIPE
     )
     await process.communicate()
+    
+    if not os.path.exists(output_file):
+        raise FileNotFoundError(f"فشل في حرق الترجمة: {output_file}")
+    
     return output_file
 
 async def merge_videos(video_files: list, output_dir: str, message_ref) -> str:
     list_file = os.path.join(output_dir, "filelist.txt")
     with open(list_file, "w", encoding="utf-8") as f:
         for video in video_files:
-            f.write(f"file '{video}'\n")
+            f.write(f"file '{os.path.abspath(video)}'\n")  # ← استخدام المسار المطلق
     
-    output_file = os.path.join(output_dir, f"merged_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = os.path.join(output_dir, f"merged_{timestamp}.mp4")
     
     ffmpeg_cmd = [
         "ffmpeg",
@@ -262,10 +272,13 @@ async def merge_videos(video_files: list, output_dir: str, message_ref) -> str:
         stderr=asyncio.subprocess.PIPE
     )
     await process.communicate()
+    
+    if not os.path.exists(output_file):
+        raise FileNotFoundError("فشل في دمج الفيديوهات")
+    
     return output_file
 
 async def process_videos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
     message_text = update.message.text
     youtube_links = await extract_youtube_links(message_text)
     
@@ -276,35 +289,48 @@ async def process_videos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if len(youtube_links) > 5:
         youtube_links = youtube_links[:5]
     
-    status_message = await update.message.reply_text(f"🔍 تم العثور على {len(youtube_links)} روابط. جاري المعالجة...")
+    status_message = await update.message.reply_text(
+        f"🔍 تم العثور على {len(youtube_links)} روابط. جاري المعالجة..."
+    )
     
+    processed_videos = []
     with tempfile.TemporaryDirectory() as temp_dir:
-        processed_videos = []
+        temp_dir = Path(temp_dir).absolute()  # ← ضمان المسار المطلق
+        
         for i, video_url in enumerate(youtube_links, 1):
             try:
                 await status_message.edit_text(f"⚙️ معالجة الفيديو {i}/{len(youtube_links)}: {video_url}")
                 
-                video_file = await download_video(video_url, temp_dir, status_message)
-                subtitle_file = await generate_subtitles(video_file, temp_dir, status_message)
-                subtitled_video = await burn_subtitles(video_file, subtitle_file, temp_dir, status_message)
+                video_file = await download_video(video_url, str(temp_dir), status_message)
+                if not video_file:
+                    raise FileNotFoundError("لم يتم تنزيل الفيديو")
+                
+                subtitle_file = await generate_subtitles(video_file, str(temp_dir), status_message)
+                if not subtitle_file:
+                    raise FileNotFoundError("لم يتم إنشاء ملف الترجمة")
+                
+                subtitled_video = await burn_subtitles(video_file, subtitle_file, str(temp_dir), status_message)
+                if not subtitled_video:
+                    raise FileNotFoundError("فشل في حرق الترجمة")
+                
                 processed_videos.append(subtitled_video)
                 
             except Exception as e:
                 logger.error(f"خطأ في الفيديو {i}: {str(e)}")
-                await status_message.edit_text(f"⚠️ خطأ في الفيديو {i}: {str(e)}. متابعة مع الفيديو التالي...")
+                await status_message.edit_text(f"⚠️ خطأ في الفيديو {i}: {str(e)}. المتابعة مع الفيديو التالي...")
                 await asyncio.sleep(3)
         
         if not processed_videos:
             await status_message.edit_text("❌ لم يتم معالجة أي فيديو.")
             return
         
-        final_video = await merge_videos(processed_videos, temp_dir, status_message) if len(processed_videos) > 1 else processed_videos[0]
+        final_video = await merge_videos(processed_videos, str(temp_dir), status_message) if len(processed_videos) > 1 else processed_videos[0]
         
         try:
             with open(final_video, "rb") as video_file:
                 await update.message.reply_video(
                     video=video_file,
-                    caption=f"🎬 تم معالجة {len(processed_videos)} من {len(youtube_links)} فيديو مع ترجمة عربية",
+                    caption=f"🎬 تم معالجة {len(processed_videos)} فيديو مع ترجمة عربية",
                     supports_streaming=True
                 )
             await status_message.delete()
