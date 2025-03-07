@@ -1,7 +1,7 @@
 # Dockerfile
 FROM python:3.10-slim
 
-# تثبيت الحزم المطلوبة لـ FFmpeg و Whisper
+# تثبيت الحزم المطلوبة
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
@@ -11,7 +11,10 @@ RUN apt-get update && apt-get install -y \
 
 # تثبيت Whisper
 RUN pip install --no-cache-dir openai-whisper
-RUN whisper download small  # ← هذا السطر ضروري لتنزيل النموذج
+RUN whisper download small  # تنزيل النموذج "small"
+
+# تثبيت أحدث إصدار من yt-dlp
+RUN pip install --no-cache-dir yt-dlp --upgrade
 
 # إعداد مجلد العمل
 WORKDIR /app
@@ -19,7 +22,7 @@ WORKDIR /app
 # نسخ ملفات المتطلبات
 COPY requirements.txt .
 
-# تثبيت الباياثون
+# تثبيت المتطلبات
 RUN pip install --no-cache-dir -r requirements.txt
 
 # نسخ ملفات المشروع

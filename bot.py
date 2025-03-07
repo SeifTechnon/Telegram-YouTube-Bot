@@ -41,7 +41,7 @@ if not TELEGRAM_BOT_TOKEN:
     logger.error("⚠️ لم يتم تعيين TELEGRAM_BOT_TOKEN في المتغيرات البيئية!")
     raise ValueError("TELEGRAM_BOT_TOKEN is not set!")
 
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # إضافة معرف الدردشة الإدارية
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 USE_WEBHOOK = True
 
@@ -183,23 +183,21 @@ async def download_video(video_url: str, output_dir: str, message_ref) -> str:
     ydl_opts = {
         'format': 'bestvideo[height<=720]+bestaudio/best',
         'outtmpl': os.path.join(output_dir, f"{video_id}.%(ext)s"),
+        'keepvideo': True,  # ← هنا (الإعداد الصحيح)
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
-            'keepvideo': True  # ← إصلاح إملائي
         }]
     }
     
     with YoutubeDL(ydl_opts) as ydl:
         ydl.download([video_url])
     
-    # ابحث عن الفيديو الأصلي (مثل .mp4 أو .webm)
     video_files = [f for f in os.listdir(output_dir) if f.startswith(f"{video_id}") and f.endswith(('.mp4', '.webm'))]
     return os.path.join(output_dir, video_files[0]) if video_files else None
 
 async def generate_subtitles(video_file: str, output_dir: str, message_ref) -> str:
-    await message_ref.edit_text("🔊 جاري استخراج النص من الفيديو...\n\n⏳ يرجى الانتظار...")
     base_name = os.path.basename(video_file).split('.')[0]
     srt_file = os.path.join(output_dir, f"{base_name}.srt")
     
@@ -252,7 +250,7 @@ async def merge_videos(video_files: list, output_dir: str, message_ref) -> str:
     list_file = os.path.join(output_dir, "filelist.txt")
     with open(list_file, "w", encoding="utf-8") as f:
         for video in video_files:
-            f.write(f"file '{os.path.abspath(video)}'\n")  # ← المسار المطلق
+            f.write(f"file '{os.path.abspath(video)}'\n")
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = os.path.join(output_dir, f"merged_{timestamp}.mp4")
@@ -295,7 +293,7 @@ async def process_videos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     processed_videos = []
     with tempfile.TemporaryDirectory() as temp_dir:
-        temp_dir = Path(temp_dir).absolute()  # ← ضمان المسار المطلق
+        temp_dir = Path(temp_dir).absolute()
         
         for i, video_url in enumerate(youtube_links, 1):
             try:
