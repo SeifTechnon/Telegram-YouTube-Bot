@@ -11,9 +11,20 @@ RUN apt-get update && apt-get install -y \
 # تثبيت Whisper
 RUN pip install --no-cache-dir openai-whisper
 
-# تنزيل نموذج Whisper "small" أثناء البناء
-RUN mkdir -p /root/.cache/whisper && \
-    whisper download small --model_dir /root/.cache/whisper
+# تثبيت wget
+RUN apt-get update && apt-get install -y wget
+
+# إنشاء مجلد لتخزين النموذج
+RUN mkdir -p /root/.cache/whisper
+
+# تنزيل نموذج Whisper "small" يدويًا
+RUN wget -O /root/.cache/whisper/small.pt https://openaipublic.azureedge.net/main/whisper/models/small.pt
+
+# التحقق من وجود الملف بعد التنزيل
+RUN ls -lh /root/.cache/whisper/small.pt || (echo "⚠️ فشل تنزيل النموذج!" && exit 1)
+
+# إزالة wget لتقليل الحجم
+RUN apt-get remove -y wget && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 # تثبيت أحدث إصدار من yt-dlp
 RUN pip install --no-cache-dir yt-dlp --upgrade
