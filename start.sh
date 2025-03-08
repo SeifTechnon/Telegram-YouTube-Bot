@@ -13,8 +13,8 @@ fi
 
 echo "🔍 التحقق من نموذج Whisper..."
 if [ ! -f "/root/.cache/whisper/small.pt" ]; then
-    echo "⚠️ نموذج Whisper غير موجود، جاري التنزيل..."
-    whisper download small
+    echo "⚠️ نموذج Whisper غير موجود في /root/.cache/whisper/small.pt"
+    exit 1
 fi
 
 echo "🧪 اختبار Whisper..."
