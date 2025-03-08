@@ -16,10 +16,12 @@ import ffmpeg
 import sentry_sdk
 from sentry_sdk.integrations.quart import QuartIntegration
 
+# إعداد التطبيق
 app = Quart(__name__)
 PORT = int(os.environ.get('PORT', 8080))
 WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
 
+# إعداد Sentry لتتبع الأخطاء
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN"),
     integrations=[QuartIntegration()],
@@ -30,12 +32,14 @@ sentry_sdk.init(
     send_default_pii=True,
 )
 
+# إعداد التسجيل
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
+# التحقق من المتغيرات البيئية
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TELEGRAM_BOT_TOKEN:
     logger.error("⚠️ لم يتم تعيين TELEGRAM_BOT_TOKEN في المتغيرات البيئية!")
@@ -44,12 +48,12 @@ if not TELEGRAM_BOT_TOKEN:
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 USE_WEBHOOK = True
-
 YOUTUBE_REGEX = r'(https?://)?(www\.)?(youtube\.com|youtu\.be)/(watch\?v=|shorts/)?([a-zA-Z0-9_-]{11})'
 
 telegram_app = None
 telegram_initialized = False
 
+# مسار للتحقق من صحة التطبيق
 @app.route('/health')
 async def health_check():
     logger.info("تم استقبال طلب للتحقق من صحة التطبيق")
@@ -60,6 +64,7 @@ async def health_check():
         "initialized": telegram_initialized
     }), 200
 
+# مسار Webhook لاستقبال التحديثات من تيليجرام
 @app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
 async def webhook():
     if not telegram_app:
@@ -69,6 +74,7 @@ async def webhook():
     await telegram_app.process_update(update)
     return jsonify({"status": "success"}), 200
 
+# معالج الأخطاء
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error(f"حدث خطأ: {context.error}")
     sentry_sdk.capture_exception(context.error)
@@ -88,6 +94,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         except Exception as e:
             logger.error(f"فشل إرسال الإشعار: {str(e)}")
 
+# أمر /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     welcome_message = (
@@ -113,6 +120,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.message.reply_text(welcome_message, parse_mode="Markdown", reply_markup=reply_markup)
 
+# أمر /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     help_message = (
         "🔍 *دليل الاستخدام*\n\n"
@@ -123,6 +131,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
     await update.message.reply_text(help_message, parse_mode="Markdown")
 
+# معالجة أزرار الـ Inline
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -135,12 +144,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         await query.edit_message_text(text=help_message, parse_mode="Markdown")
 
+# أمر /status
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "✅ البوت يعمل\n"
         "🔄 وضع الاتصال: Webhook"
     )
 
+# استخراج روابط يوتيوب
 async def extract_youtube_links(text: str) -> list:
     links = []
     for line in text.split('\n'):
@@ -154,6 +165,7 @@ async def extract_youtube_links(text: str) -> list:
                 links.append(f"https://www.youtube.com/watch?v={video_id}")
     return links
 
+# الحصول على معلومات الفيديو
 def get_video_info(video_url: str) -> dict:
     ydl_opts = {
         'quiet': True,
@@ -174,6 +186,7 @@ def get_video_info(video_url: str) -> dict:
         logger.error(f"خطأ في معلومات الفيديو: {str(e)}")
         raise Exception("فشل في الوصول إلى معلومات الفيديو")
 
+# تنزيل الفيديو
 async def download_video(video_url: str, output_dir: str, message_ref) -> str:
     info = get_video_info(video_url)
     video_id = info['id']
@@ -183,7 +196,7 @@ async def download_video(video_url: str, output_dir: str, message_ref) -> str:
     ydl_opts = {
         'format': 'bestvideo[height<=720]+bestaudio/best',
         'outtmpl': os.path.join(output_dir, f"{video_id}.%(ext)s"),
-        'keepvideo': True,  # ← هنا (الإعداد الصحيح)
+        'keepvideo': True,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -197,6 +210,7 @@ async def download_video(video_url: str, output_dir: str, message_ref) -> str:
     video_files = [f for f in os.listdir(output_dir) if f.startswith(f"{video_id}") and f.endswith(('.mp4', '.webm'))]
     return os.path.join(output_dir, video_files[0]) if video_files else None
 
+# إنشاء الترجمة باستخدام Whisper (محسن)
 async def generate_subtitles(video_file: str, output_dir: str, message_ref) -> str:
     base_name = os.path.basename(video_file).split('.')[0]
     srt_file = os.path.join(output_dir, f"{base_name}.srt")
@@ -214,14 +228,26 @@ async def generate_subtitles(video_file: str, output_dir: str, message_ref) -> s
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
-    await process.communicate()
+    stdout, stderr = await process.communicate()
+    
+    # تسجيل إخراج Whisper لتشخيص الأخطاء
+    logger.info(f"Whisper stdout: {stdout.decode()}")
+    logger.info(f"Whisper stderr: {stderr.decode()}")
+    
+    # التحقق من رمز الإرجاع
+    if process.returncode != 0:
+        raise Exception(f"فشل Whisper مع رمز الإرجاع {process.returncode}: {stderr.decode()}")
     
     if not os.path.exists(srt_file):
         srt_files = [f for f in os.listdir(output_dir) if f.endswith('.srt') and f.startswith(base_name)]
-        srt_file = os.path.join(output_dir, srt_files[0]) if srt_files else None
+        if srt_files:
+            srt_file = os.path.join(output_dir, srt_files[0])
+        else:
+            raise FileNotFoundError("لم يتم إنشاء ملف الترجمة")
     
     return srt_file
 
+# حرق الترجمة على الفيديو
 async def burn_subtitles(video_file: str, subtitle_file: str, output_dir: str, message_ref) -> str:
     base_name = os.path.basename(video_file).split('.')[0]
     output_file = os.path.join(output_dir, f"{base_name}_subtitled.mp4")
@@ -246,6 +272,7 @@ async def burn_subtitles(video_file: str, subtitle_file: str, output_dir: str, m
     
     return output_file
 
+# دمج الفيديوهات
 async def merge_videos(video_files: list, output_dir: str, message_ref) -> str:
     list_file = os.path.join(output_dir, "filelist.txt")
     with open(list_file, "w", encoding="utf-8") as f:
@@ -276,6 +303,7 @@ async def merge_videos(video_files: list, output_dir: str, message_ref) -> str:
     
     return output_file
 
+# معالجة الفيديوهات
 async def process_videos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message_text = update.message.text
     youtube_links = await extract_youtube_links(message_text)
@@ -336,6 +364,7 @@ async def process_videos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             logger.error(f"فشل في الإرسال: {str(e)}")
             await status_message.edit_text(f"❌ خطأ في الإرسال: {str(e)}")
 
+# إنشاء تطبيق تيليجرام
 def create_telegram_app():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
@@ -346,6 +375,7 @@ def create_telegram_app():
     application.add_error_handler(error_handler)
     return application
 
+# قبل بدء التشغيل
 @app.before_serving
 async def startup():
     global telegram_app, telegram_initialized
@@ -369,6 +399,7 @@ async def startup():
         sentry_sdk.capture_exception(e)
         raise
 
+# بعد إيقاف التشغيل
 @app.after_serving
 async def shutdown():
     global telegram_app, telegram_initialized
