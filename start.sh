@@ -1,13 +1,18 @@
 #!/bin/bash
 
-# تحميل النموذج مع معالجة الأخطاء
-echo "جارٍ تحميل النموذج..."
-if python -c "import whisper; model = whisper.load_model('small'); print('✅ نجاح: النموذج small تم تحميله')"; then
-    echo "النموذج جاهز للاستخدام!"
-else
-    echo "❌ خطأ: فشل تحميل النموذج"
-    exit 1
+echo "⏳ التحقق من المتغيرات البيئية..."
+if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+  echo "❌ TELEGRAM_BOT_TOKEN غير محدد"
+  exit 1
 fi
 
-# إضافة أوامر التطبيق الرئيسية هنا (مثل تشغيل السيرفر)
-# مثال: uvicorn main:app --host 0.0.0.0 --port 8000
+echo "🔍 التحقق من نموذج Whisper..."
+if python -c "import openai_whisper as whisper; model = whisper.load_model('tiny').to('cpu')" 2>/dev/null; then
+  echo "✅ نجاح: النموذج tiny جاهز"
+else
+  echo "❌ خطأ: فشل تحميل النموذج"
+  exit 1
+fi
+
+echo "🚀 بدء تشغيل البوت..."
+hypercorn bot:app --bind 0.0.0.0:$PORT --workers 1 --worker-class asyncio
