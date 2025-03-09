@@ -17,12 +17,15 @@ if [ ! -f "/root/.cache/whisper/small.pt" ]; then
     exit 1
 fi
 
+# عرض محتويات المجلد للتحقق من وجود النموذج
+echo "📂 محتويات مجلد /root/.cache/whisper/:"
+ls -l /root/.cache/whisper/
+
 echo "🧪 اختبار Whisper..."
-whisper --version
-if [ $? -ne 0 ]; then
-    echo "⚠️ Whisper غير مثبت بشكل صحيح"
+python -c "import whisper; model = whisper.load_model('small'); print('Whisper model loaded successfully')" || {
+    echo "⚠️ فشل تحميل نموذج Whisper"
     exit 1
-fi
+}
 
 echo "🚀 بدء تشغيل البوت..."
 hypercorn bot:app --bind 0.0.0.0:$PORT --workers 1 --worker-class asyncio
