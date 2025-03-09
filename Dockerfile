@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y \
 # تثبيت مكتبة Whisper
 RUN pip install --no-cache-dir openai-whisper
 
-# تنزيل نموذج Whisper "small" مسبقاً
-RUN whisper --model small --download-only
+# تنزيل نموذج Whisper "small" باستخدام Python
+RUN python -c "import whisper; whisper.load_model('small')"
 
 # تثبيت أحدث إصدار من yt-dlp
 RUN pip install --no-cache-dir yt-dlp --upgrade
