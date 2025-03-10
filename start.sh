@@ -1,17 +1,23 @@
 #!/bin/bash
 
-echo "⏳ التحقق من المتغيرات البيئية..."
+echo "🔍 التحقق من المتغيرات البيئية..."
 if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
   echo "❌ TELEGRAM_BOT_TOKEN غير محدد"
   exit 1
 fi
 
 echo "🔍 التحقق من نموذج Whisper..."
-if python -c "import openai_whisper as whisper; model = whisper.load_model('tiny').to('cpu')" 2>/dev/null; then
-  echo "✅ نجاح: النموذج tiny جاهز"
-else
-  echo "❌ خطأ: فشل تحميل النموذج"
+if [ ! -f "/root/.cache/whisper/tiny.pt" ]; then
+  echo "⚠️ نموذج Whisper tiny غير موجود"
   exit 1
+fi
+
+# اختبار تحميل النموذج
+if python -c "import whisper; model = whisper.load_model('tiny')" &> /dev/null; then
+    echo "✅ النموذج tiny تم تحميله بنجاح"
+else
+    echo "❌ فشل تحميل النموذج: ${model}"
+    exit 1
 fi
 
 echo "🚀 بدء تشغيل البوت..."

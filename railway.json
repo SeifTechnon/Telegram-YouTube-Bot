@@ -1,12 +1,12 @@
 {
   "build": {
-    "dockerfile": "Dockerfile"
+    "builder": "DOCKERFILE"
   },
   "deploy": {
     "healthCheckPath": "/health",
     "restartPolicy": {
       "maxRetries": 3
     },
-    "memoryLimit": "512M"
+    "memoryLimit": "1024M"
   }
 }

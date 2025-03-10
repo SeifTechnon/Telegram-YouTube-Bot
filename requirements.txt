@@ -2,5 +2,5 @@ quart==0.18.4
 python-telegram-bot==20.7
 yt-dlp==2024.06.17
 ffmpeg-python==0.2.0
-openai-whisper==20231116
+openai-whisper==20231117
 sentry-sdk[quart]==1.30.0

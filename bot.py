@@ -18,18 +18,16 @@ from telegram.ext import (
 )
 from yt_dlp import YoutubeDL
 import ffmpeg
+import whisper
 import sentry_sdk
 from sentry_sdk.integrations.quart import QuartIntegration
-
-# إصلاح استدعاء Whisper الصحيح مع النموذج الصغير
-import openai_whisper as whisper
 
 # إعداد التطبيق
 app = Quart(__name__)
 PORT = int(os.environ.get('PORT', 8080))
 WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
 
-# إعداد Sentry
+# Sentry لتسجيل الأخطاء
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN"),
     integrations=[QuartIntegration()],
@@ -62,8 +60,7 @@ telegram_initialized = False
 
 ### دوال المساعدة
 
-# تنزيل الفيديو من الرابط
-async def download_video(url: str, output_dir: str, message_ref) -> str:
+async def download_video(url: str, output_dir: str) -> str:
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]',
         'outtmpl': os.path.join(output_dir, '%(id)s.%(ext)s'),
@@ -73,11 +70,10 @@ async def download_video(url: str, output_dir: str, message_ref) -> str:
         info = ydl.extract_info(url, download=True)
         return ydl.prepare_filename(info)
 
-# إنشاء الترجمة
-async def generate_subtitles(video_file: str, output_dir: str, message_ref) -> str:
+async def generate_subtitles(video_file: str, output_dir: str) -> str:
     try:
         # استخدام النموذج tiny مع الجهاز cpu
-        model = whisper.load_model("tiny").to("cpu")
+        model = whisper.load_model("tiny")
         result = model.transcribe(video_file, language="ar")
         
         base_name = Path(video_file).stem
@@ -89,10 +85,8 @@ async def generate_subtitles(video_file: str, output_dir: str, message_ref) -> s
         return str(srt_file)
     except Exception as e:
         logger.error(f"فشل إنشاء الترجمة: {str(e)}")
-        await message_ref.reply_text("❌ فشل إنشاء الترجمة، يرجى المحاولة لاحقاً")
         raise
 
-# حرق الترجمة على الفيديو
 async def burn_subtitles(video_file: str, subtitle_file: str, output_dir: str) -> str:
     try:
         output_path = Path(output_dir) / f"{Path(video_file).stem}_subtitled.mp4"
@@ -113,14 +107,13 @@ async def burn_subtitles(video_file: str, subtitle_file: str, output_dir: str) -
         return str(output_path)
     except Exception as e:
         logger.error(f"فشل حرق الترجمة: {str(e)}")
-        raise FileNotFoundError("فشل في حرق الترجمة")
+        raise
 
-# معالجة الرسائل النصية
-async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def process_videos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     text = message.text
     
-    # فلترة الروابط
+    # استخراج الروابط من الرسالة
     urls = re.findall(YOUTUBE_REGEX, text)
     valid_urls = [f"https://{match[2]}/watch?v={match[5]}" for match in urls]
     
@@ -135,11 +128,11 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         for i, url in enumerate(valid_urls, 1):
             try:
-                video_file = await download_video(url, temp_dir, status_message)
+                video_file = await download_video(url, temp_dir)
                 if not video_file:
                     raise FileNotFoundError("فشل تنزيل الفيديو")
                 
-                subtitle_file = await generate_subtitles(video_file, temp_dir, status_message)
+                subtitle_file = await generate_subtitles(video_file, temp_dir)
                 if not subtitle_file:
                     raise FileNotFoundError("فشل إنشاء الترجمة")
                 
@@ -175,7 +168,7 @@ async def startup():
         telegram_app.add_handler(CommandHandler("start", start))
         telegram_app.add_handler(CommandHandler("help", help_command))
         telegram_app.add_handler(CommandHandler("status", status_command))
-        telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_message))
+        telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_videos))
         telegram_app.add_error_handler(error_handler)
         
         # إعداد الـ Webhook
@@ -223,7 +216,8 @@ async def webhook():
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"حدث خطأ: {context.error}", exc_info=context.error)
     sentry_sdk.capture_exception(context.error)
-    await update.effective_message.reply_text("❌ حدث خطأ، يرجى المحاولة لاحقاً")
+    if update and hasattr(update, 'effective_message'):
+        await update.effective_message.reply_text("❌ حدث خطأ، يرجى المحاولة لاحقا")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
