@@ -7,18 +7,11 @@ if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
 fi
 
 echo "🔍 التحقق من نموذج Whisper..."
-if [ ! -f "/root/.cache/whisper/tiny.pt" ]; then
-  echo "⚠️ نموذج Whisper tiny غير موجود"
+if ! python -c "import whisper; model = whisper.load_model('tiny')" &> /dev/null; then
+  echo "❌ فشل تحميل نموذج Whisper"
   exit 1
 fi
 
-# اختبار تحميل النموذج
-if python -c "import whisper; model = whisper.load_model('tiny')" &> /dev/null; then
-    echo "✅ النموذج tiny تم تحميله بنجاح"
-else
-    echo "❌ فشل تحميل النموذج: ${model}"
-    exit 1
-fi
-
-echo "🚀 بدء تشغيل البوت..."
-hypercorn bot:app --bind 0.0.0.0:$PORT --workers 1 --worker-class asyncio
+echo "🚀 بدء التشغيل..."
+# استخدام uvicorn لتحسين الأداء مع asyncio
+hypercorn --worker-class uvloop --bind 0.0.0.0:$PORT bot:app

@@ -8,10 +8,13 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /tmp/*
 
 # تثبيت الإصدارات المتوافقة من PyTorch
-RUN pip install --no-cache-dir torch==2.0.0+cpu torchvision==0.15.1+cpu torchaudio==2.0.1 --extra-index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu torchaudio==2.0.2+cpu --extra-index-url https://download.pytorch.org/whl/cpu
+
+# تثبيت NumPy 1.x (لتجنب تعارضات Whisper)
+RUN pip install --no-cache-dir numpy==1.24.4
 
 # تثبيت Whisper مع الإصدار الصحيح
-RUN pip install --no-cache-dir openai-whisper==20231117
+RUN pip install --no-cache-dir whisper==3.0.0.post2
 
 # تنزيل النموذج tiny مسبقًا لتجنب تحميله أثناء التشغيل
 RUN python -c "import whisper; whisper.load_model('tiny')"

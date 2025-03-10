@@ -107,7 +107,7 @@ async def burn_subtitles(video_file: str, subtitle_file: str, output_dir: str) -
         return str(output_path)
     except Exception as e:
         logger.error(f"فشل حرق الترجمة: {str(e)}")
-        raise
+        raise FileNotFoundError("فشل في حرق الترجمة")
 
 async def process_videos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
@@ -223,15 +223,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     welcome_message = (
         f"👋 مرحباً {user.first_name}!\n"
-        "🎬 بوت تنزيل فيديوهات يوتيوب مع ترجمة عربية\n"
-        "💡 طريقة الاستخدام:\n"
-        "1️⃣ أرسل رابط فيديو\n"
-        "2️⃣ أرسل عدة روابط في سطور منفصلة\n"
-        "⚠️ الحد الأقصى: 5 فيديوهات\n"
+        "🎬 بوت تنزيل فيديوهات يوتيوب مع ترجمة عربية 🎬\n"
+        "📝 *طريقة الاستخدام:*\n"
+        "1️⃣ أرسل رابط فيديو واحد للتنزيل مع ترجمة\n"
+        "2️⃣ أرسل عدة روابط (كل رابط في سطر) لدمجها في فيديو واحد\n"
+        "⚠️ الحد الأقصى 5 فيديوهات\n"
+        "🌟 مثال:\n"
+        "```\n"
+        "https://www.youtube.com/watch?v=zdLc6i9uNVc\n"
+        "https://www.youtube.com/watch?v=I9YDayY7Dk4\n"
+        "```"
+        "🔄 ابدأ الآن!"
     )
     keyboard = [
-        [InlineKeyboardButton("كيفية الاستخدام", callback_data="help")],
-        [InlineKeyboardButton("تواصل مع المطور", url="https://t.me/yourusername")]
+        [InlineKeyboardButton("🔍 طريقة الاستخدام", callback_data="help")],
+        [InlineKeyboardButton("📱 تواصل مع المطور", url="https://t.me/yourusername")]
     ]
     await update.message.reply_text(
         welcome_message,
@@ -239,17 +245,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = (
-        "🔍 دليل الاستخدام:\n"
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    help_message = (
+        "🔍 *دليل الاستخدام*\n"
         "1️⃣ لتنزيل فيديو واحد: أرسل رابط الفيديو\n"
-        "2️⃣ لدمج عدة فيديوهات: أرسل الروابط في سطور منفصلة\n"
+        "2️⃣ لدمج عدة فيديوهات: أرسل روابطها في سطور منفصلة\n"
         "3️⃣ الأوامر المتاحة: /start, /help, /status\n"
-        "⏳ مدة المعالجة تعتمد على طول الفيديو"
+        "⏱ مدة المعالجة تعتمد على طول الفيديو."
     )
-    await update.message.reply_text(help_text, parse_mode="Markdown")
+    await update.message.reply_text(help_message, parse_mode="Markdown")
 
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     status = "✅ يعمل" if telegram_initialized else "❌ متوقف"
     await update.message.reply_text(f"حالة البوت: {status}")
 
