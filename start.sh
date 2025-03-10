@@ -7,13 +7,13 @@ if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
 fi
 
 echo "🔍 التحقق من نموذج Whisper..."
-if [ ! -f "/root/.cache/whisper/tiny.pt" ]; then
-  echo "⚠️ نموذج Whisper tiny غير موجود"
+if [ ! -f "/root/.cache/whisper/large-v3.pt" ]; then
+  echo "⚠️ نموذج Whisper large-v3 غير موجود"
   exit 1
 fi
 
 echo "🧪 اختبار Whisper..."
-if ! python -c "import openai_whisper as whisper; model = whisper.load_model('tiny')" &> /dev/null; then
+if ! python -c "import openai_whisper as whisper; model = whisper.load_model('large-v3')" &> /dev/null; then
   echo "❌ فشل تحميل نموذج Whisper"
   exit 1
 fi

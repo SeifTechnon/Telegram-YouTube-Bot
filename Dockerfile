@@ -7,17 +7,17 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/*
 
-# تثبيت الإصدارات المتوافقة من PyTorch
+# تثبيت الإصدارات المتوافقة من PyTorch لدعم النموذج الكبير
 RUN pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu torchaudio==2.0.2+cpu --extra-index-url https://download.pytorch.org/whl/cpu
 
 # تثبيت NumPy 1.x (لتجنب تعارضات Whisper)
 RUN pip install --no-cache-dir numpy==1.24.4
 
-# تثبيت Whisper مع الإصدار الصحيح
-RUN pip install --no-cache-dir openai-whisper==3.0.0.post2
+# تثبيت Whisper مع الإصدار الأخير (المتوافق مع النماذج الكبيرة)
+RUN pip install --no-cache-dir openai-whisper==20240930
 
-# تنزيل النموذج tiny مسبقًا لتجنب تحميله أثناء التشغيل
-RUN python -c "import openai_whisper as whisper; whisper.load_model('tiny')"
+# تنزيل النموذج large-v3 مسبقًا لتجنب تحميله أثناء التشغيل
+RUN python -c "import openai_whisper as whisper; whisper.load_model('large-v3')"
 
 # تثبيت باقي المتطلبات
 COPY requirements.txt .

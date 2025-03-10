@@ -7,6 +7,6 @@
     "restartPolicy": {
       "maxRetries": 3
     },
-    "memoryLimit": "1024M"
+    "memoryLimit": "8192M"
   }
 }

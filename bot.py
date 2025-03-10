@@ -71,8 +71,8 @@ async def download_video(url: str, output_dir: str) -> str:
 
 async def generate_subtitles(video_file: str, output_dir: str) -> str:
     try:
-        # استخدام النموذج tiny مع الجهاز cpu
-        model = whisper.load_model("tiny")
+        # استخدام النموذج large-v3 (الأقوى)
+        model = whisper.load_model("large-v3")
         result = model.transcribe(video_file, language="ar")
         
         base_name = Path(video_file).stem
