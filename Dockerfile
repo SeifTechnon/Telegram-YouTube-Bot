@@ -14,10 +14,10 @@ RUN pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu torchaud
 RUN pip install --no-cache-dir numpy==1.24.4
 
 # تثبيت Whisper مع الإصدار الصحيح
-RUN pip install --no-cache-dir whisper==3.0.0.post2
+RUN pip install --no-cache-dir openai-whisper==3.0.0.post2
 
 # تنزيل النموذج tiny مسبقًا لتجنب تحميله أثناء التشغيل
-RUN python -c "import whisper; whisper.load_model('tiny')"
+RUN python -c "import openai_whisper as whisper; whisper.load_model('tiny')"
 
 # تثبيت باقي المتطلبات
 COPY requirements.txt .

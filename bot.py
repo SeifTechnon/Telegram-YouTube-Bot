@@ -18,7 +18,7 @@ from telegram.ext import (
 )
 from yt_dlp import YoutubeDL
 import ffmpeg
-import whisper
+import openai_whisper as whisper
 import sentry_sdk
 from sentry_sdk.integrations.quart import QuartIntegration
 
@@ -52,7 +52,6 @@ if not TELEGRAM_BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN is required")
 
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-USE_WEBHOOK = True
 YOUTUBE_REGEX = r'(https?://)?(www\.)?(youtube\.com|youtu\.be)/(watch\?v=|shorts/)?([a-zA-Z0-9_-]{11})'
 
 telegram_app = None
@@ -232,7 +231,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "```\n"
         "https://www.youtube.com/watch?v=zdLc6i9uNVc\n"
         "https://www.youtube.com/watch?v=I9YDayY7Dk4\n"
-        "```"
+        "```\n"
         "🔄 ابدأ الآن!"
     )
     keyboard = [
