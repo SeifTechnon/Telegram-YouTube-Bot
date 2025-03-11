@@ -1,7 +1,12 @@
-quart==0.18.4
-python-telegram-bot==20.7
-yt-dlp==2024.06.17
-ffmpeg-python==0.2.0
-sentry-sdk[quart]==1.30.0
-uvloop==0.19.0
-hypercorn==0.14.3
+quart
+aiogram
+yt-dlp
+ffmpeg-python
+sentry-sdk[quart]
+hypercorn
+openai-whisper
+torch
+deep-translator
+
+# تجنب تثبيت uvloop على Windows
+uvloop ; sys_platform != "win32"

@@ -1,262 +1,339 @@
 import os
 import re
-import logging
 import asyncio
-import tempfile
-from pathlib import Path
-from datetime import datetime
-from urllib.parse import urlparse, parse_qs
-from quart import Quart, jsonify, request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    filters,
-    ContextTypes,
-    CallbackQueryHandler
-)
-from yt_dlp import YoutubeDL
-import ffmpeg
-import openai_whisper as whisper
-import sentry_sdk
-from sentry_sdk.integrations.quart import QuartIntegration
+import yt_dlp
+import whisper
+import torch
+import subprocess
+from deep_translator import GoogleTranslator
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.types import FSInputFile
 
-# إعداد التطبيق
+# إضافة Quart للواجهة الويب
+from quart import Quart, jsonify
+
+# تحميل توكن البوت من المتغيرات البيئية
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# إنشاء المجلدات اللازمة
+if not os.path.exists("downloads"):
+    os.makedirs("downloads")
+
+# إعداد البوت
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+
+# إنشاء تطبيق Quart
 app = Quart(__name__)
-PORT = int(os.environ.get('PORT', 8080))
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
 
-# Sentry لتسجيل الأخطاء
-sentry_sdk.init(
-    dsn=os.getenv("SENTRY_DSN"),
-    integrations=[QuartIntegration()],
-    traces_sample_rate=1.0,
-    environment="production",
-    release="v1.0.0",
-    attach_stacktrace=True,
-    send_default_pii=True,
-)
+# إضافة مسار الصحة للتحقق من حالة الخدمة
+@app.route("/health")
+async def health_check():
+    return jsonify({"status": "healthy"}), 200
 
-# إعداد التسجيل
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# التأكد من استخدام GPU إن كان متاحًا
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"🖥️ استخدام جهاز: {device}")
 
-# التحقق من المتغيرات البيئية
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-if not TELEGRAM_BOT_TOKEN:
-    logger.error("⚠️ TELEGRAM_BOT_TOKEN غير متوفر")
-    raise ValueError("TELEGRAM_BOT_TOKEN is required")
+# تحميل نموذج Whisper
+MODEL_SIZE = "large-v3"
+print(f"⏳ جاري تحميل نموذج Whisper {MODEL_SIZE}...")
+model = whisper.load_model(MODEL_SIZE).to(device)
+print("✅ تم تحميل النموذج!")
 
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-YOUTUBE_REGEX = r'(https?://)?(www\.)?(youtube\.com|youtu\.be)/(watch\?v=|shorts/)?([a-zA-Z0-9_-]{11})'
+# رسالة الترحيب والشرح
+START_MESSAGE = """
+👋 مرحبًا بك في البوت! هذا البوت يقوم بـ:
+1️⃣ تحميل فيديوهات يوتيوب بجودة 136 (فيديو فقط).
+2️⃣ استخدام Whisper لإنشاء ترجمة تلقائية.
+3️⃣ ترجمة النصوص إلى العربية.
+4️⃣ دمج الترجمة في الفيديو وإرساله لك.
+📌 أرسل رابط يوتيوب أو عدة روابط للبدء.
+"""
 
-telegram_app = None
-telegram_initialized = False
+# تحقق من رابط اليوتيوب
+YOUTUBE_REGEX = re.compile(r"(https?://)?(www\.)?(youtube\.com|youtu\.be)/.+$")
 
-### دوال المساعدة
+@dp.message(Command("start"))
+async def start(message: types.Message):
+    await message.reply(START_MESSAGE)
 
-async def download_video(url: str, output_dir: str) -> str:
-    ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]',
-        'outtmpl': os.path.join(output_dir, '%(id)s.%(ext)s'),
-        'quiet': True,
-    }
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        return ydl.prepare_filename(info)
+@dp.message(lambda message: not message.text.startswith('/'))
+async def handle_message(message: types.Message):
+    text = message.text.strip()
+    urls = text.split("\n")
 
-async def generate_subtitles(video_file: str, output_dir: str) -> str:
-    try:
-        # استخدام النموذج large-v3 (الأقوى)
-        model = whisper.load_model("large-v3")
-        result = model.transcribe(video_file, language="ar")
-        
-        base_name = Path(video_file).stem
-        srt_file = Path(output_dir) / f"{base_name}.srt"
-        
-        with open(srt_file, "w", encoding="utf-8") as f:
-            f.write(result["text"])
-            
-        return str(srt_file)
-    except Exception as e:
-        logger.error(f"فشل إنشاء الترجمة: {str(e)}")
-        raise
-
-async def burn_subtitles(video_file: str, subtitle_file: str, output_dir: str) -> str:
-    try:
-        output_path = Path(output_dir) / f"{Path(video_file).stem}_subtitled.mp4"
-        (
-            ffmpeg
-            .input(video_file)
-            .output(
-                str(output_path),
-                vf=f"subtitles={subtitle_file}:force_style='FontName=Arial,FontSize=24,PrimaryColour=0xFFFFFF,OutlineColour=0x000000,BorderStyle=1'",
-                c='copy',
-                preset='fast',
-                crf=22,
-                loglevel='error'
-            )
-            .overwrite_output()
-            .run(capture_stdout=True, capture_stderr=True)
-        )
-        return str(output_path)
-    except Exception as e:
-        logger.error(f"فشل حرق الترجمة: {str(e)}")
-        raise FileNotFoundError("فشل في حرق الترجمة")
-
-async def process_videos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    text = message.text
-    
-    # استخراج الروابط من الرسالة
-    urls = re.findall(YOUTUBE_REGEX, text)
-    valid_urls = [f"https://{match[2]}/watch?v={match[5]}" for match in urls]
+    valid_urls = [url for url in urls if YOUTUBE_REGEX.match(url)]
     
     if not valid_urls:
-        await message.reply_text("❌ الرابط غير صالح أو غير مدعوم")
+        await message.reply("❌ لم يتم العثور على روابط يوتيوب صالحة. الرجاء إرسال رابط صحيح.")
+        return
+
+    status_message = await message.reply("⏳ جاري تحميل الفيديوهات، يرجى الانتظار...")
+
+    output_files = []
+    for i, url in enumerate(valid_urls):
+        try:
+            await bot.edit_message_text(
+                f"⏳ جاري معالجة الفيديو {i+1}/{len(valid_urls)}: التحميل...", 
+                chat_id=message.chat.id, 
+                message_id=status_message.message_id
+            )
+            video_path = await download_video(url)
+            
+            await bot.edit_message_text(
+                f"⏳ جاري معالجة الفيديو {i+1}/{len(valid_urls)}: استخراج الترجمة...", 
+                chat_id=message.chat.id, 
+                message_id=status_message.message_id
+            )
+            sub_file = await generate_subtitles(video_path)
+            
+            await bot.edit_message_text(
+                f"⏳ جاري معالجة الفيديو {i+1}/{len(valid_urls)}: ترجمة النصوص...", 
+                chat_id=message.chat.id, 
+                message_id=status_message.message_id
+            )
+            translated_sub = await translate_subtitles(sub_file)
+            
+            await bot.edit_message_text(
+                f"⏳ جاري معالجة الفيديو {i+1}/{len(valid_urls)}: دمج الترجمة...", 
+                chat_id=message.chat.id, 
+                message_id=status_message.message_id
+            )
+            final_video = await burn_subtitles(video_path, translated_sub)
+            
+            output_files.append(final_video)
+        except Exception as e:
+            await message.reply(f"❌ حدث خطأ أثناء معالجة الفيديو {i+1}: {str(e)}")
+    
+    if not output_files:
+        await bot.edit_message_text(
+            "❌ لم يتم إنتاج أي ملفات بسبب أخطاء في المعالجة.", 
+            chat_id=message.chat.id, 
+            message_id=status_message.message_id
+        )
         return
     
-    # إنشاء مجلد مؤقت
-    with tempfile.TemporaryDirectory() as temp_dir:
-        status_message = await message.reply_text("🔄 جاري التنزيل والمعالجة...")
-        processed_videos = []
-        
-        for i, url in enumerate(valid_urls, 1):
-            try:
-                video_file = await download_video(url, temp_dir)
-                if not video_file:
-                    raise FileNotFoundError("فشل تنزيل الفيديو")
-                
-                subtitle_file = await generate_subtitles(video_file, temp_dir)
-                if not subtitle_file:
-                    raise FileNotFoundError("فشل إنشاء الترجمة")
-                
-                subtitled_video = await burn_subtitles(video_file, subtitle_file, temp_dir)
-                processed_videos.append(subtitled_video)
-                
-                await status_message.edit_text(f"✅ فيديو {i}/{len(valid_urls)} معالج بنجاح")
-                
-            except Exception as e:
-                logger.error(f"خطأ في الفيديو {i}: {str(e)}")
-                await status_message.edit_text("❌ حدث خطأ أثناء المعالجة")
-                return
+    await bot.edit_message_text(
+        "⏳ جاري إنهاء المعالجة...", 
+        chat_id=message.chat.id, 
+        message_id=status_message.message_id
+    )
+    
+    if len(output_files) > 1:
+        await bot.edit_message_text(
+            "⏳ جاري دمج الفيديوهات...", 
+            chat_id=message.chat.id, 
+            message_id=status_message.message_id
+        )
+        final_video = await merge_videos(output_files)
+        await send_video(message, final_video)
+    else:
+        await send_video(message, output_files[0])
+    
+    await bot.edit_message_text(
+        "✅ تمت المعالجة بنجاح!", 
+        chat_id=message.chat.id, 
+        message_id=status_message.message_id
+    )
+
+async def download_video(url):
+    """ تحميل فيديو باستخدام yt-dlp """
+    output_path = f"downloads/%(id)s.%(ext)s"
+    ydl_opts = {
+        "format": "136",  # mp4 بدقة 720p
+        "outtmpl": output_path,
+        "quiet": True
+    }
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return f"downloads/{info['id']}.mp4"
+
+async def generate_subtitles(video_path):
+    """ إنشاء ملف الترجمة باستخدام Whisper """
+    result = model.transcribe(video_path)
+    
+    # إنشاء ملف SRT
+    srt_file = video_path.replace(".mp4", ".srt")
+    
+    with open(srt_file, "w", encoding="utf-8") as f:
+        for i, segment in enumerate(result["segments"]):
+            start_time = format_timestamp(segment["start"])
+            end_time = format_timestamp(segment["end"])
+            text = segment["text"].strip()
             
-        # إرسال الفيديوهات مع الترجمة
-        for video_path in processed_videos:
-            await context.bot.send_video(
-                chat_id=message.chat_id,
-                video=open(video_path, 'rb'),
-                supports_streaming=True
-            )
+            f.write(f"{i+1}\n")
+            f.write(f"{start_time} --> {end_time}\n")
+            f.write(f"{text}\n\n")
+    
+    return srt_file
+
+def format_timestamp(seconds):
+    """ تنسيق الوقت بصيغة SRT (HH:MM:SS,mmm) """
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = seconds % 60
+    milliseconds = int((seconds - int(seconds)) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{int(seconds):02d},{milliseconds:03d}"
+
+async def translate_subtitles(sub_file):
+    """ ترجمة الترجمة إلى العربية """
+    translator = GoogleTranslator(source="auto", target="ar")
+    
+    with open(sub_file, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    
+    translated_file = sub_file.replace(".srt", "_ar.srt")
+    
+    with open(translated_file, "w", encoding="utf-8") as f:
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            
+            # كتابة رقم المقطع كما هو
+            if line.isdigit():
+                f.write(f"{line}\n")
+                i += 1
+                continue
+            
+            # كتابة التوقيت كما هو
+            if "-->" in line:
+                f.write(f"{line}\n")
+                i += 1
+                continue
+            
+            # تجميع النص للترجمة
+            text_to_translate = ""
+            while i < len(lines) and lines[i].strip() and "-->" not in lines[i]:
+                text_to_translate += lines[i].strip() + " "
+                i += 1
+            
+            # ترجمة النص إذا كان هناك نص
+            if text_to_translate:
+                try:
+                    translated_text = translator.translate(text_to_translate)
+                    f.write(f"{translated_text}\n")
+                except Exception as e:
+                    # إذا فشلت الترجمة، استخدم النص الأصلي
+                    f.write(f"{text_to_translate}\n")
+            
+            # كتابة سطر فارغ
+            f.write("\n")
+            
+            # تخطي السطور الفارغة
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+    
+    return translated_file
+
+async def burn_subtitles(video_path, sub_file):
+    """ حرق الترجمة داخل الفيديو باستخدام FFmpeg """
+    output_path = video_path.replace(".mp4", "_sub.mp4")
+    
+    command = [
+        "ffmpeg", "-y", "-i", video_path, 
+        "-vf", f"subtitles={sub_file}:force_style='FontSize=24,Alignment=2,BorderStyle=3,Outline=1,Shadow=0,MarginV=25'",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        output_path
+    ]
+    
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    
+    await process.communicate()
+    
+    if process.returncode != 0:
+        # إذا فشل FFmpeg، نجرب بديلاً أبسط
+        command = [
+            "ffmpeg", "-y", "-i", video_path, 
+            "-vf", f"subtitles={sub_file}",
+            "-c:v", "libx264", "-preset", "fast",
+            output_path
+        ]
         
-        await status_message.edit_text(f"✅ تم معالجة {len(processed_videos)} فيديوهات بنجاح")
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        await process.communicate()
+    
+    return output_path
 
-### تهيئة التطبيق
+async def merge_videos(video_paths):
+    """ دمج عدة فيديوهات في فيديو واحد """
+    # إنشاء ملف قائمة بالفيديوهات
+    list_file = "downloads/file_list.txt"
+    with open(list_file, "w", encoding="utf-8") as f:
+        for path in video_paths:
+            f.write(f"file '{os.path.abspath(path)}'\n")
+    
+    output_path = "downloads/merged_video.mp4"
+    
+    command = [
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", list_file, "-c", "copy", output_path
+    ]
+    
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    
+    await process.communicate()
+    
+    return output_path
 
+async def send_video(message, video_path):
+    """ إرسال الفيديو إلى المستخدم """
+    try:
+        video = FSInputFile(video_path)
+        await message.reply_video(
+            video=video,
+            caption="✅ تمت معالجة الفيديو بنجاح!"
+        )
+    except Exception as e:
+        # إذا كان الملف كبيرًا جدًا، نرسله كملف
+        await message.reply("⚠️ الفيديو كبير جدًا، سيتم إرساله كملف...")
+        document = FSInputFile(video_path)
+        await message.reply_document(
+            document=document,
+            caption="✅ تمت معالجة الفيديو بنجاح!"
+        )
+
+@dp.message(Command("clean"))
+async def clean(message: types.Message):
+    try:
+        for file in os.listdir("downloads"):
+            if file.endswith((".mp4", ".srt")):
+                os.remove(os.path.join("downloads", file))
+        await message.reply("✅ تم تنظيف جميع الملفات بنجاح!")
+    except Exception as e:
+        await message.reply(f"❌ حدث خطأ أثناء تنظيف الملفات: {str(e)}")
+
+# إعداد وظيفة لبدء البوت مع تطبيق Quart
 @app.before_serving
 async def startup():
-    global telegram_app, telegram_initialized
-    try:
-        telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-        
-        # إضافة المعالجات
-        telegram_app.add_handler(CommandHandler("start", start))
-        telegram_app.add_handler(CommandHandler("help", help_command))
-        telegram_app.add_handler(CommandHandler("status", status_command))
-        telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_videos))
-        telegram_app.add_error_handler(error_handler)
-        
-        # إعداد الـ Webhook
-        webhook_url = f"{WEBHOOK_URL}/{TELEGRAM_BOT_TOKEN}"
-        await telegram_app.initialize()
-        await telegram_app.bot.set_webhook(webhook_url)
-        telegram_initialized = True
-        
-        logger.info("✅ البوت يعمل بنجاح!")
-        if TELEGRAM_CHAT_ID:
-            await telegram_app.bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID,
-                text="🚀 البوت يعمل الآن!"
-            )
-    except Exception as e:
-        logger.error(f"❌ خطأ التهيئة: {str(e)}")
-        sentry_sdk.capture_exception(e)
-        raise
+    print("🚀 بدء تشغيل البوت...")
+    await dp.start_polling(bot)
 
+# إعداد وظيفة لإغلاق البوت مع تطبيق Quart
 @app.after_serving
 async def shutdown():
-    global telegram_app, telegram_initialized
-    if telegram_app:
-        await telegram_app.bot.delete_webhook()
-        await telegram_app.stop()
-        await telegram_app.shutdown()
-        telegram_initialized = False
-        if TELEGRAM_CHAT_ID:
-            await telegram_app.bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID,
-                text="🛑 تم إيقاف البوت"
-            )
-        logger.info("✅ تم الإيقاف بنجاح!")
+    print("📴 إيقاف تشغيل البوت...")
+    await bot.session.close()
 
-### معالجات الأوامر
-
-@app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
-async def webhook():
-    if not telegram_app:
-        return jsonify({"status": "error", "message": "البوت غير مهيأ"}), 500
-    update = Update.de_json(await request.get_json(), telegram_app.bot)
-    await telegram_app.process_update(update)
-    return jsonify({"status": "success"}), 200
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"حدث خطأ: {context.error}", exc_info=context.error)
-    sentry_sdk.capture_exception(context.error)
-    if update and hasattr(update, 'effective_message'):
-        await update.effective_message.reply_text("❌ حدث خطأ، يرجى المحاولة لاحقا")
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    welcome_message = (
-        f"👋 مرحباً {user.first_name}!\n"
-        "🎬 بوت تنزيل فيديوهات يوتيوب مع ترجمة عربية 🎬\n"
-        "📝 *طريقة الاستخدام:*\n"
-        "1️⃣ أرسل رابط فيديو واحد للتنزيل مع ترجمة\n"
-        "2️⃣ أرسل عدة روابط (كل رابط في سطر) لدمجها في فيديو واحد\n"
-        "⚠️ الحد الأقصى 5 فيديوهات\n"
-        "🌟 مثال:\n"
-        "```\n"
-        "https://www.youtube.com/watch?v=zdLc6i9uNVc\n"
-        "https://www.youtube.com/watch?v=I9YDayY7Dk4\n"
-        "```\n"
-        "🔄 ابدأ الآن!"
-    )
-    keyboard = [
-        [InlineKeyboardButton("🔍 طريقة الاستخدام", callback_data="help")],
-        [InlineKeyboardButton("📱 تواصل مع المطور", url="https://t.me/yourusername")]
-    ]
-    await update.message.reply_text(
-        welcome_message,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
-    )
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    help_message = (
-        "🔍 *دليل الاستخدام*\n"
-        "1️⃣ لتنزيل فيديو واحد: أرسل رابط الفيديو\n"
-        "2️⃣ لدمج عدة فيديوهات: أرسل روابطها في سطور منفصلة\n"
-        "3️⃣ الأوامر المتاحة: /start, /help, /status\n"
-        "⏱ مدة المعالجة تعتمد على طول الفيديو."
-    )
-    await update.message.reply_text(help_message, parse_mode="Markdown")
-
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    status = "✅ يعمل" if telegram_initialized else "❌ متوقف"
-    await update.message.reply_text(f"حالة البوت: {status}")
+# تشغيل البوت (يستخدم فقط عند تشغيل الملف مباشرة وليس عبر hypercorn)
+async def main():
+    print("🚀 البوت يعمل...")
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT)
+    asyncio.run(main())

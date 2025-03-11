@@ -7,16 +7,18 @@ if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
 fi
 
 echo "🔍 التحقق من نموذج Whisper..."
-if [ ! -f "/root/.cache/whisper/large-v3.pt" ]; then
-  echo "⚠️ نموذج Whisper large-v3 غير موجود"
-  exit 1
-fi
+python -c "
+import whisper
+try:
+    model = whisper.load_model('large-v3')
+    print('✅ نموذج Whisper جاهز')
+except Exception as e:
+    print(f'❌ فشل تحميل نموذج Whisper: {e}')
+    exit(1)
+"
 
-echo "🧪 اختبار Whisper..."
-if ! python -c "import openai_whisper as whisper; model = whisper.load_model('large-v3')" &> /dev/null; then
-  echo "❌ فشل تحميل نموذج Whisper"
-  exit 1
-fi
+# تحديد منفذ افتراضي إذا لم يكن محددًا
+PORT=${PORT:-8000}
 
-echo "🚀 بدء التشغيل..."
-hypercorn --worker-class uvloop --bind 0.0.0.0:$PORT bot:app
+echo "🚀 بدء التشغيل على المنفذ $PORT..."
+exec hypercorn --worker-class uvloop --bind 0.0.0.0:$PORT bot:app
